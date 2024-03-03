@@ -3,34 +3,34 @@ package org.example
 import java.util.*
 
 open class Type {
-    class Number(val value: kotlin.Float) : Type() {
+    class Number(val value: Float) : Type() {
         override fun toString(): String {
             return value.toString()
         }
     }
-    class Symbol(val value: kotlin.String) : Type() {
+    class Symbol(val value: String) : Type() {
         override fun toString(): String {
             return value
         }
     }
-    class Null() : Type() {
+    class Null : Type() {
         override fun toString(): String {
             return "null"
         }
     }
     class List(val value: Vector<Type>) : Type() {
         override fun toString(): String {
-            val text = value.map {
+            val text = value.joinToString {
                 it.toString()
-            }.joinToString()
+            }
 
             return "($text)"
         }
     }
 }
 
-class Peekable<T>(val values: List<T>) {
-    var index = 0
+class Peekable<T>(private val values: List<T>) {
+    private var index = 0
 
     fun peek(): T {
         return if (index > values.count() - 1) throw IndexOutOfBoundsException("Expected a value but instead found EOF.") else values[index]
@@ -47,7 +47,7 @@ object Patterns {
 }
 
 fun parseList(tokens: Peekable<String>): Type.List {
-    var list = Vector<Type>()
+    val list = Vector<Type>()
 
     var token = tokens.next()
 
@@ -70,9 +70,8 @@ fun parseAtom(token: String): Type {
 }
 
 fun parse(tokens: Peekable<String>): Type {
-    var token = tokens.peek();
 
-    val ast = when (token) {
+    val ast = when (val token = tokens.peek()) {
         "(" -> parseList(tokens)
         else -> parseAtom(token)
     }
@@ -87,8 +86,8 @@ fun main() {
         .replace("(", " ( ")
         .replace(")", " ) ")
 
-    var tokens = Peekable(source.split(" ").filter { it.isNotEmpty() })
-    var ast = parse(tokens);
+    val tokens = Peekable(source.split(" ").filter { it.isNotEmpty() })
+    val ast = parse(tokens)
 
     println(ast)
 }
