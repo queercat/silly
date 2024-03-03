@@ -69,6 +69,29 @@ fun parseAtom(token: String): Type {
     return Type.Symbol(token)
 }
 
+fun evaluate(ast: Type): Type {
+    if (ast is Type.List) {
+        if (ast.value.count() <= 1) {
+            throw IllegalArgumentException("Expected a list with greater than 1 arguments but instead found ${ast.value.count()} arguments.")
+        }
+
+        val first = ast.value.first()
+        val arguments = ast.value.slice(1..ast.value.count())
+
+        if (first !is Type.Symbol) throw IllegalArgumentException("Expected a symbol as the first argument but instead found {$first}")
+
+        if (first.value == "'") {
+            if (arguments.count() > 1) throw IllegalArgumentException("Too many parameters for quoting expected 1 bunt instead found ${arguments.count()}")
+            return arguments[0]
+        }
+
+        return Type.List(Vector(arguments.map { evaluate(it) }))
+    }
+
+    return ast
+}
+
+
 fun parse(tokens: Peekable<String>): Type {
 
     val ast = when (val token = tokens.peek()) {
@@ -89,5 +112,5 @@ fun main() {
     val tokens = Peekable(source.split(" ").filter { it.isNotEmpty() })
     val ast = parse(tokens)
 
-    println(ast)
+    println(evaluate(ast))
 }
