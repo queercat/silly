@@ -2,9 +2,24 @@ package org.example
 
 import java.util.*
 
-class Environment {
+class Environment() {
     val values = HashMap<String, Type>()
     var outer: Environment? = null
+
+    constructor(parameters: Type.List, arguments: Type.List) : this() {
+        if (parameters.value.count() != arguments.value.count()) throw IllegalArgumentException("Parameters ")
+
+        arguments.value.zip(parameters.value).forEach {
+            val (parameter, argument) = it
+            if (parameter !is Type.Symbol) throw IllegalArgumentException("Expected all parameters to be symbol but instead found ${it.first::class.qualifiedName} ${it.first}")
+
+            values[parameter.value] = argument
+        }
+    }
+
+    fun find(symbol: String): Environment? {
+        return if (this.values.containsKey(symbol)) this else this.outer?.find(symbol)
+    }
 }
 
 open class Type {
@@ -36,9 +51,15 @@ open class Type {
         }
     }
 
-    class Function(val value: java.util.function.Function<Type, Type>) : Type() {
+    class Function(val body: Type.List, Type>, val parameters: Type.List, val environment: Environment) : Type() {
         override fun toString(): String {
-            return "Function {$value}"
+            return "Function {$body}"
+        }
+
+        operator fun invoke(arguments: Type.List): Type {
+            if (arguments.value.count() != parameters.value.count()) throw IllegalArgumentException("Expected ${parameters.value.count()} arguments but instead found ${arguments.value.count()}.")
+
+            return evaluate(parameters, Environment(arguments, parameters))
         }
     }
 
@@ -121,6 +142,8 @@ fun evaluate(ast: Type, environment: Environment): Type {
             environment.values[symbol.value] = evaluate(arguments[1], environment)
 
             return Type.Null()
+        } else if (first.value == "^") {
+            return Type.Function()
         }
 
         arguments.map { evaluate(it, environment) }.also { arguments = it }
@@ -130,11 +153,11 @@ fun evaluate(ast: Type, environment: Environment): Type {
 
         if (function !is Type.Function) throw IllegalArgumentException("Expected function stored but found something else. {$function}")
 
-        val result = function.value.apply(Type.List(Vector(arguments)))
+        val result = function(Type.List(Vector(arguments)))
 
         return result
     } else if (ast is Type.Symbol) {
-        return environment.values[ast.value]
+        return environment.find(ast.value)?.values?.get(ast.value)
             ?: throw IllegalArgumentException("Unable to find symbol ${ast.value} in environment.")
     }
 
@@ -183,7 +206,7 @@ fun createStandardEnvironment(): Environment {
                     return acc + type.value
                 }
             ))
-        }
+        }, Type.List(Vector(arrayListOf(Type.Symbol("a"), Type.Symbol("b")))), environment
     )
 
     return environment
