@@ -1,6 +1,7 @@
 package org.example
 
 import java.util.*
+import kotlin.concurrent.thread
 
 class Environment() {
     val values = HashMap<String, Type>()
@@ -19,12 +20,13 @@ class Environment() {
         }
     }
 
-    fun find(symbol: String): Environment? {
+    fun find(symbol: String): Environment {
         return if (this.values.containsKey(symbol)) this else this.outer?.find(symbol)
+            ?: throw ClassNotFoundException("Unable to find symbol $symbol in environment $this")
     }
 }
 
-open class Type() {
+open class Type {
     class Number(val value: Float) : Type() {
         override fun toString(): String {
             return value.toString()
@@ -70,6 +72,16 @@ open class Type() {
     class Atom(var value: Type) : Type() {
         override fun toString(): String {
             return "@ -> ${value.toString()}"
+        }
+    }
+
+    class Thread(var ast: Type.List, var environment: Environment) : Type() {
+        operator fun invoke(): Type.Thread {
+            thread(block = {
+                evaluate(ast, environment)
+            })
+
+            return this
         }
     }
 }
@@ -122,7 +134,7 @@ fun apply(ast: Type, environment: Environment): Type {
     }
 
     if (ast is Type.Symbol) {
-        return environment.find(ast.value)?.values?.get(ast.value)
+        return environment.find(ast.value).values[ast.value]
             ?: throw IllegalAccessException("Unable to find ${ast.value} in environment.")
     }
 
@@ -142,17 +154,17 @@ fun evaluate(ast: Type, environment: Environment): Type {
         if (first.value == "'") {
             if (arguments.value.count() > 1) throw IllegalArgumentException("Too many parameters for quoting, expected 1 but instead found ${arguments.value.count()}")
             return arguments.value[0]
-        }
-        else if (first.value == "if") {
+        } else if (first.value == "if") {
             if (arguments.value.count() != 3) throw IllegalArgumentException("Expected 3 arguments but instead found ${arguments.value.count()}")
 
             val bool = evaluate(arguments.value[0], environment)
 
             if (bool !is Type.Boolean) throw IllegalArgumentException("Expected boolean value but instead found ${bool::class.qualifiedName} $bool")
 
-            return if (bool.value) evaluate(arguments.value[1], environment) else evaluate(arguments.value[2], environment)
-        }
-        else if (first.value == "let") {
+            return if (bool.value) evaluate(arguments.value[1], environment) else evaluate(
+                arguments.value[2], environment
+            )
+        } else if (first.value == "let") {
             if (arguments.value.count() != 2) throw IllegalArgumentException("Expected 2 arguments but instead found ${arguments.value.count()}")
 
             val symbol = arguments.value[0]
@@ -161,25 +173,30 @@ fun evaluate(ast: Type, environment: Environment): Type {
 
             environment.values[symbol.value] = evaluate(arguments.value[1], environment)
 
-            return environment.values[symbol.value] ?: throw ClassNotFoundException("Unable to bind value to symbol. $environment")
-        }
-        else if (first.value == "^") {
-            return Type.Function(
-                fun (lambdaArguments: Type.List): Type {
-                    val lambdaParameters = arguments.value[0] as Type.List
+            return environment.values[symbol.value]
+                ?: throw ClassNotFoundException("Unable to bind value to symbol. $environment")
+        } else if (first.value == "^") {
+            return Type.Function(fun(lambdaArguments: Type.List): Type {
+                val lambdaParameters = arguments.value[0] as Type.List
 
-                    val closure = Environment(lambdaParameters, lambdaArguments, environment)
+                val closure = Environment(lambdaParameters, lambdaArguments, environment)
 
-                    return evaluate(arguments.value[1], closure)
-                })
+                return evaluate(arguments.value[1], closure)
+            })
+        } else if (first.value == "thread") {
+            return Type.Thread(arguments.value[0].assert(), environment)
         }
 
         arguments = apply(arguments, environment).assert<Type.List>()
-        val lambda = environment.find(first.value)?.values?.get(first.value)?.assert<Type.Function>() ?: throw ClassNotFoundException("Unable to find symbol. ")
+        val lambda = environment.find(first.value).values[first.value]!!
 
-        return lambda.body(arguments)
+        if (lambda is Type.Function) {
+            return lambda.body(arguments)
+        }
+
+        return lambda.assert<Type.Thread>().invoke()
     } else if (ast is Type.Symbol) {
-        return environment.find(ast.value)?.values?.get(ast.value)
+        return environment.find(ast.value).values[ast.value]
             ?: throw IllegalArgumentException("Unable to find symbol ${ast.value} in environment.")
     }
 
@@ -199,12 +216,7 @@ fun parse(tokens: Peekable<String>): Type {
 fun read(): String {
     var source: String = readlnOrNull() ?: throw Exception("Unable to read from standard-in.")
 
-    source = source
-        .replace("(", " ( ")
-        .replace(")", " ) ")
-        .replace("^", " ^ ")
-        .replace("@", " @ ")
-        .replace("+", " + ")
+    source = source.replace("(", " ( ").replace(")", " ) ").replace("^", " ^ ").replace("@", " @ ").replace("+", " + ")
         .replace("'", " ' ")
 
     return source
@@ -219,12 +231,6 @@ fun eval(source: String, environment: Environment): Type {
 
 inline fun <reified T : Type> Type.assert(): T {
     if (this !is T) throw IllegalArgumentException("Expected a number type but found ${this::class.qualifiedName} $this instead.")
-
-    return this
-}
-
-fun Type.assertNumber(): Type.Number {
-    if (this !is Type.Number) throw IllegalArgumentException("Expected a number type but found ${this::class.qualifiedName} $this instead.")
 
     return this
 }
