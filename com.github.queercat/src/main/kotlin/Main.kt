@@ -374,11 +374,18 @@ fun print(ast: Type) {
     println(ast)
 }
 
+fun evaluate(source: String, environment: Environment) {
+    val ast = parseList(Peekable(tokenize(source)))
+    evaluate(ast, environment)
+}
+
 fun main() {
     val environment = createStandardEnvironment()
 
-    val cursed = "(eval (+ (+ \"(do\" (slurp \"core/core.silly\")) \")\")))"
-    evaluate(parseList(Peekable(tokenize(cursed))), environment)
+    val readFile = "(let read-file (^ (name) (eval (+ (+ \"(do\" (slurp name)) \")\"))))"
+
+    evaluate(readFile, environment)
+    evaluate("(read-file \"core/core.silly\")", environment)
 
     while (true) {
         try {
