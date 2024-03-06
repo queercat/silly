@@ -1,5 +1,8 @@
 package org.example
 
+import java.io.Console
+import java.nio.file.FileSystems
+import java.nio.file.Path
 import java.util.*
 import kotlin.concurrent.thread
 
@@ -28,25 +31,25 @@ class Environment() {
 
 open class Type {
     class Number(val value: Float) : Type() {
-        override fun toString(): String {
+        override fun toString(): kotlin.String {
             return value.toString()
         }
     }
 
-    class Symbol(val value: String) : Type() {
-        override fun toString(): String {
+    class Symbol(val value: kotlin.String) : Type() {
+        override fun toString(): kotlin.String {
             return value
         }
     }
 
     class Null : Type() {
-        override fun toString(): String {
+        override fun toString(): kotlin.String {
             return "null"
         }
     }
 
     class List(val value: Vector<Type>) : Type() {
-        override fun toString(): String {
+        override fun toString(): kotlin.String {
             val text = value.joinToString {
                 it.toString()
             }
@@ -55,22 +58,28 @@ open class Type {
         }
     }
 
+    class String(val value: kotlin.String) : Type() {
+        override fun toString(): kotlin.String {
+            return value
+        }
+    }
+
     class Function(
         val body: (Type.List) -> Type,
     ) : Type() {
-        override fun toString(): String {
+        override fun toString(): kotlin.String {
             return "Function {$body}"
         }
     }
 
     class Boolean(val value: kotlin.Boolean) : Type() {
-        override fun toString(): String {
+        override fun toString(): kotlin.String {
             return value.toString()
         }
     }
 
     class Atom(var value: Type) : Type() {
-        override fun toString(): String {
+        override fun toString(): kotlin.String {
             return "@ -> ${value.toString()}"
         }
     }
@@ -101,6 +110,7 @@ class Peekable<T>(private val values: List<T>) {
 object Patterns {
     val numberPattern = Regex("\\d+")
     val symbolPattern = Regex("[+\\-/*^@]")
+    val stringPattern = Regex("\".+\"")
 }
 
 fun parseList(tokens: Peekable<String>): Type.List {
@@ -123,6 +133,8 @@ fun parseAtom(token: String): Type {
         return Type.Symbol(token)
     } else if (token == "true" || token == "false") {
         return Type.Boolean(token == "true")
+    } else if (Patterns.stringPattern.matches(token)) {
+        return Type.String(token.slice(1..token.count() - 2))
     }
 
     return Type.Symbol(token)
@@ -277,6 +289,12 @@ fun createStandardEnvironment(): Environment {
         }
 
         return result
+    })
+
+    environment.values["slurp"] = Type.Function(fun(list: Type.List): Type {
+        val filename = list.value[0].assert<Type.String>().value
+
+        return Type.String(java.io.File(filename).readText())
     })
 
     return environment
