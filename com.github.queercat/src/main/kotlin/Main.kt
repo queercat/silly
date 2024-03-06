@@ -262,6 +262,23 @@ fun createStandardEnvironment(): Environment {
         return atom
     })
 
+    environment.values["sleep"] = Type.Function(fun(list: Type.List): Type {
+        val duration = list.value[0].assert<Type.Number>().value
+
+        Thread.sleep(duration.toLong())
+        return Type.Null()
+    })
+
+    environment.values["do"] = Type.Function(fun(list: Type.List): Type {
+        var result: Type = Type.Null()
+
+        list.value.forEach {
+            result = evaluate(it, environment)
+        }
+
+        return result
+    })
+
     return environment
 }
 
