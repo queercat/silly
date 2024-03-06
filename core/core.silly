@@ -1,1 +1,2 @@
-"hello world"
+(let horlo (^ () ('horlo)))
+(let horlo2 (^ () ('horlo)))

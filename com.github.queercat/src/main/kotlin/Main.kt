@@ -109,8 +109,8 @@ class Peekable<T>(private val values: List<T>) {
 
 object Patterns {
     val numberPattern = Regex("\\d+")
-    val symbolPattern = Regex("[+\\-/*^@]")
-    val stringPattern = Regex("\".+\"")
+    val unaryPattern = Regex("[()+\\-/*^@']")
+    val symbolPattern = Regex("[a-zA-Z\\-\\d]+")
 }
 
 fun parseList(tokens: Peekable<String>): Type.List {
@@ -126,15 +126,19 @@ fun parseList(tokens: Peekable<String>): Type.List {
     return Type.List(list)
 }
 
-fun parseAtom(token: String): Type {
+fun parseAtom(tokens: Peekable<String>): Type {
+    val token = tokens.peek()
+
+    if (token[0] == '\"') {
+        return Type.String(token.slice(1 until token.length - 1))
+    }
+
     if (Patterns.numberPattern.matches(token)) {
         return Type.Number(token.toFloat())
-    } else if (Patterns.symbolPattern.matches(token)) {
+    } else if (Patterns.unaryPattern.matches(token)) {
         return Type.Symbol(token)
     } else if (token == "true" || token == "false") {
         return Type.Boolean(token == "true")
-    } else if (Patterns.stringPattern.matches(token)) {
-        return Type.String(token.slice(1..token.count() - 2))
     }
 
     return Type.Symbol(token)
@@ -219,23 +223,77 @@ fun evaluate(ast: Type, environment: Environment): Type {
 fun parse(tokens: Peekable<String>): Type {
     val ast = when (val token = tokens.peek()) {
         "(" -> parseList(tokens)
-        else -> parseAtom(token)
+        else -> parseAtom(tokens)
     }
 
     return ast
 }
 
-fun read(): String {
-    var source: String = readlnOrNull() ?: throw Exception("Unable to read from standard-in.")
+fun tokenize(source: String): List<String> {
+    var start = 0
+    var end = 0
+    var char = source[start]
 
-    source = source.replace("(", " ( ").replace(")", " ) ").replace("^", " ^ ").replace("@", " @ ").replace("+", " + ")
-        .replace("'", " ' ")
+    val tokens = mutableListOf<String>()
+
+    while (start < source.length) {
+        char = source[start]
+
+        if (Patterns.unaryPattern.matches(char.toString())) {
+            end++
+        }
+
+        else if (Patterns.numberPattern.matches(char.toString())) {
+            while (end < source.length && Patterns.numberPattern.matches(source[end].toString())) {
+                end++
+            }
+        }
+
+        else if (Patterns.symbolPattern.matches(char.toString())) {
+            while (end < source.length && Patterns.symbolPattern.matches(source[end].toString())) {
+                end++
+            }
+        }
+
+        else if (char == '"') {
+            if (end == source.length - 1) {
+                throw IllegalArgumentException("Expected a closing quote but instead found EOF.")
+            }
+            while (source[++end] != '"'){}
+            end++
+        }
+
+        else if (char == ' ' || char == '\n' || char == '\t' || char == '\r') {
+            if (end == source.length - 1) {
+                break
+            }
+            while (char == ' ' || char == '\n' || char == '\t' || char == '\r') {
+                char = source[++end]
+            }
+
+            start = end
+            continue
+        }
+
+        else {
+            throw IllegalArgumentException("Unable to tokenize character ${source[start]}")
+        }
+
+        tokens += source.slice(start until end)
+        start = end
+    }
+
+    return tokens
+}
+
+fun read(): String {
+    val source: String = readlnOrNull() ?: throw Exception("Unable to read from standard-in.")
 
     return source
 }
 
 fun eval(source: String, environment: Environment): Type {
-    val tokens = Peekable(source.split(" ").filter { it.isNotEmpty() })
+    val tokens = Peekable(tokenize(source))
     val ast = parse(tokens)
 
     return evaluate(ast, environment)
@@ -252,6 +310,12 @@ fun createStandardEnvironment(): Environment {
     val environment = Environment()
 
     environment.values["+"] = Type.Function(fun(list: Type.List): Type {
+        if (list.value.count() != 2 || list.value[0]::class != list.value[1]::class) throw IllegalArgumentException("Expected 2 numbers but instead found ${list.value.count()}")
+
+        if (list.value[0] is Type.String) {
+            return Type.String(list.value[0].assert<Type.String>().value + list.value[1].assert<Type.String>().value)
+        }
+
         return Type.Number(list.value[0].assert<Type.Number>().value + list.value[1].assert<Type.Number>().value)
     })
 
@@ -297,6 +361,12 @@ fun createStandardEnvironment(): Environment {
         return Type.String(java.io.File(filename).readText())
     })
 
+    environment.values["eval"] = Type.Function(fun(list: Type.List): Type {
+        val source = list.value[0].assert<Type.String>().value
+
+        return eval(source, environment)
+    })
+
     return environment
 }
 
@@ -306,6 +376,9 @@ fun print(ast: Type) {
 
 fun main() {
     val environment = createStandardEnvironment()
+
+    val cursed = "(eval (+ (+ \"(do\" (slurp \"core/core.silly\")) \")\")))"
+    evaluate(parseList(Peekable(tokenize(cursed))), environment)
 
     while (true) {
         try {
