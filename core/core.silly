@@ -1,15 +1,16 @@
-(let
-  http-response
+(let http-response
     (^
       (data)
-      (+ "HTTP/1.1 200 OK\r\nContent-Length: " (string (+ (length data) 2)) "\r\nContent-Type: text/html\r\n\r\n" data)
+      (list "HTTP/1.1 200 OK\r\n" "Content-Length: " (string (length data)) "\r\n" "Content-Type: text/plain\r\n\n" data)
     )
 )
 
-(let
-  http-response
-    (^
-      (data)
-      (string "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nContent-Type: text/html\r\n\r\nHello World!")
-    )
+(let hello
+  (server 6060
+    (^ (data) (http-response data))
+  )
+)
+
+(let t-hello
+  (thread (hello))
 )

@@ -86,9 +86,11 @@ open class Type {
 
     class Thread(var ast: Type.List, var environment: Environment) : Type() {
         operator fun invoke(): Type.Thread {
-            thread(block = {
+            val lambda: () -> Unit = {
                 evaluate(ast, environment)
-            })
+            }
+
+            val thread = thread(block = lambda, isDaemon = true)
 
             return this
         }
@@ -96,26 +98,37 @@ open class Type {
 
     class Server(val port: Int, var lambda: Type.Function, var environment: Environment) : Type() {
         operator fun invoke(): Type {
-            val server = ServerSocket(port)
-            val client = server.accept()
-            val output = DataOutputStream(client.getOutputStream())
+            while (true) {
+                try {
+                    val server = ServerSocket(port)
+                    val client = server.accept()
+                    val output = DataOutputStream(client.getOutputStream())
 
-            //val input = DataInputStream(client.getInputStream())
-            val content = "hello"
+                    //val input = DataInputStream(client.getInputStream())
+                    val content = "hello"
 
-            //input.close()
+                    //input.close()
 
-            val arguments = Type.List(Vector(listOf(Type.String(content))))
+                    val arguments = Type.List(Vector(listOf(Type.String(content))))
 
-            val result = lambda.body(arguments).assert<Type.String>()
+                    val result = lambda.body(arguments).assert<Type.List>()
 
-            output.writeUTF(result.value)
-            output.flush()
+                    result.assertAllOfType<Type.String>()
 
-            client.close()
-            server.close()
+                    result.value.forEach {
+                        output.write(it.assert<Type.String>().value.toByteArray())
+                    }
 
-            return result
+                    output.flush()
+
+                    client.close()
+                    server.close()
+                } catch (exception: Exception) {
+                    error(exception)
+                }
+            }
+
+            return Type.Null()
         }
     }
 }
@@ -406,6 +419,10 @@ fun createStandardEnvironment(): Environment {
 
         Thread.sleep(duration.toLong())
         return Type.Null()
+    })
+
+    environment.values["list"] = Type.Function(fun(list: Type.List): Type {
+        return list
     })
 
     environment.values["do"] = Type.Function(fun(list: Type.List): Type {
