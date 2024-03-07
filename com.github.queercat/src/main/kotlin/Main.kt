@@ -1,8 +1,8 @@
 package org.example
 
-import java.io.Console
-import java.nio.file.FileSystems
-import java.nio.file.Path
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.net.ServerSocket
 import java.util.*
 import kotlin.concurrent.thread
 
@@ -93,6 +93,31 @@ open class Type {
             return this
         }
     }
+
+    class Server(val port: Int, var lambda: Type.Function, var environment: Environment) : Type() {
+        operator fun invoke(): Type {
+            val server = ServerSocket(port)
+            val client = server.accept()
+            val output = DataOutputStream(client.getOutputStream())
+
+            //val input = DataInputStream(client.getInputStream())
+            val content = "hello"
+
+            //input.close()
+
+            val arguments = Type.List(Vector(listOf(Type.String(content))))
+
+            val result = lambda.body(arguments).assert<Type.String>()
+
+            output.writeUTF(result.value)
+            output.flush()
+
+            client.close()
+            server.close()
+
+            return result
+        }
+    }
 }
 
 class Peekable<T>(private val values: List<T>) {
@@ -130,7 +155,11 @@ fun parseAtom(tokens: Peekable<String>): Type {
     val token = tokens.peek()
 
     if (token[0] == '\"') {
-        return Type.String(token.slice(1 until token.length - 1))
+        val text = token.slice(1 until token.length - 1)
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+
+        return Type.String(text)
     }
 
     if (Patterns.numberPattern.matches(token)) {
@@ -210,7 +239,15 @@ fun evaluate(ast: Type, environment: Environment): Type {
             return lambda.body(arguments)
         }
 
-        return lambda.assert<Type.Thread>().invoke()
+        else if (lambda is Type.Thread) {
+            return lambda()
+        }
+
+        else if (lambda is Type.Server) {
+            return lambda()
+        }
+
+        return lambda
     } else if (ast is Type.Symbol) {
         return environment.find(ast.value).values[ast.value]
             ?: throw IllegalArgumentException("Unable to find symbol ${ast.value} in environment.")
@@ -300,7 +337,15 @@ fun eval(source: String, environment: Environment): Type {
 }
 
 inline fun <reified T : Type> Type.assert(): T {
-    if (this !is T) throw IllegalArgumentException("Expected a number type but found ${this::class.qualifiedName} $this instead.")
+    if (this !is T) throw IllegalArgumentException("Expected a ${T::class} type but found ${this::class.qualifiedName} $this instead.")
+
+    return this
+}
+
+inline fun <reified T : Type>Type.List.assertAllOfType(): Type.List {
+    this.value.forEach {
+        it.assert<T>()
+    }
 
     return this
 }
@@ -310,13 +355,31 @@ fun createStandardEnvironment(): Environment {
     val environment = Environment()
 
     environment.values["+"] = Type.Function(fun(list: Type.List): Type {
-        if (list.value.count() != 2 || list.value[0]::class != list.value[1]::class) throw IllegalArgumentException("Expected 2 numbers but instead found ${list.value.count()}")
+        val first = list.value.first()
 
-        if (list.value[0] is Type.String) {
-            return Type.String(list.value[0].assert<Type.String>().value + list.value[1].assert<Type.String>().value)
+        if (first is Type.String) {
+            list.assertAllOfType<Type.String>()
+
+            var text = ""
+            list.value.forEach {
+                text += it.assert<Type.String>().value
+            }
+
+            return Type.String(text)
         }
 
-        return Type.Number(list.value[0].assert<Type.Number>().value + list.value[1].assert<Type.Number>().value)
+        else if (first is Type.Number) {
+            list.assertAllOfType<Type.Number>()
+
+            var accumulator: Float = 0f
+            list.value.forEach {
+                accumulator += it.assert<Type.Number>().value
+            }
+
+            return Type.Number(accumulator)
+        }
+
+        return Type.Null()
     })
 
     environment.values["atom"] = Type.Function(fun(list: Type.List): Type {
@@ -365,6 +428,38 @@ fun createStandardEnvironment(): Environment {
         val source = list.value[0].assert<Type.String>().value
 
         return eval(source, environment)
+    })
+
+    environment.values["string"] = Type.Function(fun(list: Type.List): Type {
+        val value = list.value[0]
+
+        if (value is Type.String) {
+            return value
+        } else if (value is Type.Number) {
+            return Type.String(value.value.toInt().toString())
+        }
+
+        return value
+    })
+
+    environment.values["length"] = Type.Function(fun(list: Type.List): Type {
+        var result: Type = Type.Null()
+        val value = list.value[0]
+
+        if (value is Type.String) {
+            result = Type.Number(value.value.length.toFloat())
+        }
+
+        return result
+    })
+
+    environment.values["server"] = Type.Function(fun(list: Type.List): Type {
+        val port = list.value[0].assert<Type.Number>().value.toInt()
+        val lambda = list.value[1].assert<Type.Function>()
+
+        val server = Type.Server(port, lambda, environment)
+
+        return server
     })
 
     return environment
